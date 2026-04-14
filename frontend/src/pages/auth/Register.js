@@ -17,9 +17,16 @@ export default function Register() {
     if (form.password !== form.confirm) { setErr("Parollar mos emas"); return; }
     if (form.password.length < 6) { setErr("Parol kamida 6 belgi bo'lishi kerak"); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({ email: form.email, password: form.password });
+    const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password });
     setLoading(false);
     if (error) { setErr(error.message); return; }
+    
+    // If email confirmation is disabled, session is available immediately
+    // If not, data.session will be null — user needs to confirm email
+    if (!data.session) {
+      setErr("Emailingizga tasdiqlash xati yuborildi. Iltimos, emailni tasdiqlang va qaytadan kiring.");
+      return;
+    }
     nav("/create-company");
   };
 

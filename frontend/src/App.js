@@ -16,20 +16,36 @@ import "./index.css";
 
 function ProtectedRoute({ children }) {
   const { user, loading, company } = useAuth();
+
+  // Show spinner while auth is initializing
   if (loading) return (
-    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
       <div className="spinner" />
     </div>
   );
+
+  // Not logged in → go to login
   if (!user) return <Navigate to="/login" replace />;
+
+  // Logged in but no company → must create one
   if (!company) return <Navigate to="/create-company" replace />;
+
   return children;
 }
 
 function PublicRoute({ children }) {
   const { user, company, loading } = useAuth();
-  if (loading) return null;
+
+  // While loading, show nothing (avoids flash)
+  if (loading) return (
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
+      <div className="spinner" />
+    </div>
+  );
+
+  // Already logged in with company → redirect to dashboard
   if (user && company) return <Navigate to="/overview" replace />;
+
   return children;
 }
 

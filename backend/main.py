@@ -13,12 +13,9 @@ from groq import Groq
 
 load_dotenv()
 
-# ── Clients ───────────────────────────────────────────────────────────────────
-# service-role key bypasses RLS — for bot & server-side ops
-supabase: Client = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY")   # <-- service role (not anon)
-)
+# Clients
+_supa_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(os.getenv("SUPABASE_URL"), _supa_key)
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL    = os.getenv("WEBHOOK_URL", "")
@@ -39,13 +36,19 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 async def get_current_user(request: Request) -> dict:
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        raise HTTPException(401, "Missing token")
-    token = auth_header.split(" ")[1]
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Empty token")
     try:
-        user = supabase.auth.get_user(token)
-        return {"id": user.user.id, "email": user.user.email, "token": token}
-    except Exception:
-        raise HTTPException(401, "Invalid token")
+        user_resp = supabase.auth.get_user(token)
+        if not user_resp or not user_resp.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return {"id": user_resp.user.id, "email": user_resp.user.email, "token": token}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Auth failed: {str(e)[:80]}")
 
 async def get_company_id(request: Request, user: dict = Depends(get_current_user)) -> str:
     """Get company_id from query param or user's first company."""
@@ -455,6 +458,12 @@ async def health():
     return {"status": "ok"}
 
 # ── Auth / Company ────────────────────────────────────────────────────────────
+
+@app.get("/api/companies")
+async def list_companies(user: dict = Depends(get_current_user)):
+    """Alias for /api/companies/me — prevents 405 errors."""
+    r = supabase.table("company_members")        .select("company_id, role, companies(id, name, created_at)")        .eq("user_id", user["id"]).execute()
+    return {"data": r.data}
 
 @app.post("/api/companies")
 async def create_company(body: CompanyCreate, user: dict = Depends(get_current_user)):
