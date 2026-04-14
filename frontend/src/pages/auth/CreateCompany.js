@@ -3,7 +3,7 @@ import { api } from "../../lib/api";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { Building2, TrendingUp } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../src/lib/supabase";
 
 export default function CreateCompany() {
   const [name, setName] = useState("");
