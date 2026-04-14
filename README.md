@@ -1,101 +1,83 @@
 # 💼 FinanceBot — Biznes Moliya Menejeri
 
-Kichik va o'rta bizneslar uchun **Telegram bot + Web Dashboard** moliya tizimi.
-
-Telegram orqali ovoz yoki matn xabar yuboring → tranzaksiya avtomatik saqlanadi → dashboardda real vaqtda ko'ring.
+Telegram bot + Web Dashboard. Har bir kompaniya uchun alohida hisob va ma'lumotlar.
 
 ---
 
-## 🎯 Imkoniyatlar
+## 🚀 O'rnatish (ketma-ket bajaring)
 
-### Telegram Bot
-- 🎤 **Ovoz xabarlar** — Whisper AI orqali avtomatik transkriptsiya
-- 🤖 **AI tahlil** — LLaMA 3.3 70B orqali intentsiyani aniqlash
-- ➕ Daromad / xarajat qo'shish (matn yoki ovoz)
-- 📊 Hisobot so'rash (`/today`, `/week`, `/month`)
-- ✏️ Tranzaksiyani o'zgartirish va o'chirish
-- 🗂 Kategoriyalar ro'yxati (`/categories`)
-- ❓ Noaniq input bo'lsa — aqlli savol beradi
+### 1. Supabase — eski jadvallarni o'chiring, yangisini yarating
 
-### Web Dashboard (5 sahifa)
-- **Overview** — asosiy ko'rsatkichlar, trendlar, tez qo'shish
-- **Tranzaksiyalar** — filter, qidiruv, inline tahrirlash
-- **Analitika** — oylik trend, pie chart, kategoriya tahlili
-- **Kategoriyalar** — CRUD, ikonka va rang tanlash
-- **Byudjet** ⭐ — xarajat limiti, progress bar, ogohlantirish
+**MUHIM:** Agar oldin schema yugurtirilgan bo'lsa, avval eski jadvallarni o'chiring:
 
----
-
-## 🚀 O'rnatish
-
-### 1. Reponi clone qiling
-```bash
-git clone https://github.com/AsilbekDeveloper/finance-manager.git
-cd finance-manager
+```sql
+-- Supabase SQL Editor da avval shu ni yugurtiring:
+DROP TABLE IF EXISTS budgets CASCADE;
+DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS telegram_sessions CASCADE;
+DROP TABLE IF EXISTS company_members CASCADE;
+DROP TABLE IF EXISTS companies CASCADE;
+DROP FUNCTION IF EXISTS get_user_company_ids CASCADE;
+DROP FUNCTION IF EXISTS seed_default_categories CASCADE;
+DROP FUNCTION IF EXISTS on_company_created CASCADE;
 ```
 
-### 2. Supabase — Database sozlash
-1. [supabase.com](https://supabase.com) ga kiring
-2. Loyihangizni oching → **SQL Editor**
-3. `backend/schema.sql` faylini nusxalab, SQL Editorga joylashtiring
-4. **Run** tugmasini bosing
+Keyin `backend/schema.sql` faylini to'liq joylashtiring va **Run** bosing.
 
-### 3. Backend — Railway deploy
+### 2. Supabase — service_role key oling
 
-1. [railway.app](https://railway.app) ga kiring
-2. **New Project** → **Deploy from GitHub repo**
-3. `finance-manager` reponi tanlang
-4. **Root directory** ni `backend` ga o'zgartiring
-5. **Variables** bo'limiga quyidagi env o'zgaruvchilarni kiriting:
+Settings → API → **service_role** (secret) key ni copy qiling.
 
+### 3. Supabase — telegram_link_code ustuni qo'shing
+
+```sql
+ALTER TABLE company_members ADD COLUMN IF NOT EXISTS telegram_link_code TEXT;
 ```
-GROQ_API_KEY=your_groq_key
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-TELEGRAM_BOT_TOKEN=your_bot_token
+
+### 4. Railway — Backend deploy
+
+**Environment Variables:**
+```
+GROQ_API_KEY=gsk_IqCAr3EgsBA7eJH...
+SUPABASE_URL=https://uqnmvanmucgvngvbgjqa.supabase.co
+SUPABASE_KEY=eyJhbGci...          (anon key)
+SUPABASE_SERVICE_KEY=eyJhbGci... (service_role key — YANGI!)
+TELEGRAM_BOT_TOKEN=8746323835:AAE...
 WEBHOOK_URL=https://YOUR-APP.up.railway.app
+FRONTEND_URL=https://YOUR-APP.vercel.app
 ```
 
-6. Deploy bo'lgach, URL ni copy qiling (masalan: `https://finance-manager-production.up.railway.app`)
-7. `WEBHOOK_URL` ni shu URL ga yangilang
+Root directory: `backend`
 
-### 4. Frontend — Vercel deploy
+### 5. Vercel — Frontend deploy
 
-1. [vercel.com](https://vercel.com) ga kiring
-2. **New Project** → GitHub dan `finance-manager` reponi import qiling
-3. **Root directory**: `frontend`
-4. **Environment Variables**:
+**Environment Variables:**
 ```
 REACT_APP_API_URL=https://YOUR-RAILWAY-APP.up.railway.app
+REACT_APP_SUPABASE_URL=https://uqnmvanmucgvngvbgjqa.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=eyJhbGci...  (anon key)
 ```
-5. **Deploy** tugmasini bosing
+
+Root directory: `frontend`
 
 ---
 
-## 💬 Bot ishlatish
+## 👤 Foydalanish tartibi
 
-Bot username: `@YourBotUsername`
+### Yangi kompaniya:
+1. `/register` → email + parol
+2. Kompaniya nomi kiriting
+3. Dashboard tayyor!
 
-**Tranzaksiya qo'shish:**
-```
-"500,000 so'm sotuvdan tushdi"
-"Xodimga 2,000,000 ish haqi berdik"
-"Transport uchun 150,000 to'ladik"
-```
+### Telegram bog'lash:
+1. **Sozlamalar** → **Telegram kod olish**
+2. Kodni `@uzfinx_bot` ga yuboring: `/link YOUR_CODE`
 
-**Hisobot so'rash:**
-```
-"Bu oy qancha sarfladik?"
-"Bugungi daromad?"
-/today   /week   /month
-```
-
-**Boshqa buyruqlar:**
-```
-/start      — boshlash
-/help       — yordam
-/categories — kategoriyalar
-```
+### Jamoa a'zosi qo'shish:
+1. **Sozlamalar** → **Taklif qilish** → email kiriting
+2. Link code chiqadi → a'zoga yuboring
+3. A'zo `/link CODE` yuborgach bog'lanadi
 
 ---
 
@@ -104,76 +86,21 @@ Bot username: `@YourBotUsername`
 ```
 finance-manager/
 ├── backend/
-│   ├── main.py          # FastAPI + Telegram bot
+│   ├── main.py           FastAPI + bot + API
+│   ├── schema.sql        Supabase SQL (auth+RLS)
 │   ├── requirements.txt
-│   ├── schema.sql       # Supabase SQL
-│   ├── railway.toml     # Railway config
-│   └── .env             # Environment variables
+│   └── .env
 └── frontend/
-    ├── public/
-    │   └── index.html
-    ├── src/
-    │   ├── App.js
-    │   ├── index.js
-    │   ├── index.css
-    │   ├── lib/api.js
-    │   ├── components/
-    │   │   ├── Layout.js
-    │   │   └── TransactionModal.js
-    │   └── pages/
-    │       ├── Overview.js
-    │       ├── Transactions.js
-    │       ├── Analytics.js
-    │       ├── Categories.js
-    │       └── Budgets.js
-    ├── package.json
-    └── vercel.json
+    └── src/
+        ├── context/AuthContext.js
+        ├── pages/auth/   Login, Register, CreateCompany
+        ├── pages/        Overview, Transactions, Analytics,
+        │                 Categories, Budgets, Settings
+        └── lib/api.js
 ```
-
----
-
-## 🛠 Tech Stack
-
-| Layer | Tech |
-|-------|------|
-| Backend | Python, FastAPI, Uvicorn |
-| Bot | python-telegram-bot |
-| AI/Voice | Groq (Whisper + LLaMA 3.3 70B) |
-| Database | Supabase (PostgreSQL) |
-| Frontend | React 18, React Router |
-| Charts | Recharts |
-| Deploy | Railway (backend) + Vercel (frontend) |
-
----
-
-## 📦 Mahalliy ishga tushirish (local)
-
-**Backend:**
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm start
-```
-
----
 
 ## 📋 Product Brief
 
-**Kim uchun:** O'zbekistondagi kichik va o'rta biznes egalari va moliya jamoalari.
-
-**Nima muammoni hal qiladi:** WhatsApp, daftar yoki Excel orqali sochilgan moliyaviy ma'lumotlarni birlashtirib, real vaqtda biznes moliyasini ko'rish imkonini beradi.
-
-**V2 nima bo'ladi:** Ko'p foydalanuvchi (rol asosida), bank API integratsiyasi, avtomatik hisob-kitob, va mobil ilova.
-
----
-
-## ➕ Qo'shimcha 3 kun bo'lsa nima qilardim
-
-Multi-tenant (ko'p kompaniya) tizim qurardim: har bir biznes o'z ma'lumotlarini alohida ko'rsin. Bank SMS larini avtomatik parse qilish (Kapital Bank, Ipak Yo'li) qo'shardim — foydalanuvchi hech narsa kiritmay, SMS kelib tranzaksiya o'zi saqlansin. Telegram guruh botini qo'shardim, ya'ni butun jamoa bitta guruhda ishlaydi va har kim tranzaksiya qo'sha oladi. Oylik moliyaviy hisobotni PDF qilib email yuborish ham qo'shardim.
+**Kim uchun:** O'zbekistondagi kichik va o'rta biznes egalari.
+**Nima hal qiladi:** Har bir kompaniya o'z ma'lumotlari bilan alohida ishlaydi; Telegram orqali ovoz/matn xabar yuborib tranzaksiya qo'shiladi.
+**V2:** Bank SMS auto-parse, multi-currency, mobil ilova, PDF hisobotlar.
