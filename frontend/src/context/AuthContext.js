@@ -6,54 +6,87 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]           = useState(null);
-  const [company, setCompany]     = useState(null); // active company
+  const [user, setUser] = useState(null);
   const [companies, setCompanies] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [activeCompany, setActiveCompany] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Load companies for logged-in user
   const loadCompanies = async () => {
     try {
-      const r = await api.getMyCompanies();
-      const list = (r.data || []).map((m) => ({
+      const data = await api.getMyCompanies();
+      const list = (data.data || []).map((m) => ({
         ...m.companies,
         role: m.role,
       }));
+
       setCompanies(list);
-      // Restore last active company from localStorage
-      const saved = localStorage.getItem("active_company_id");
-      const found = list.find((c) => c.id === saved) || list[0] || null;
-      setCompany(found);
-    } catch (_) {}
+
+      // Restore active company from localStorage
+      const savedId = localStorage.getItem("active_company_id");
+      const found = list.find((c) => c.id === savedId) || list[0] || null;
+
+      if (found) {
+        setActiveCompany(found);
+        localStorage.setItem("active_company_id", found.id);
+      }
+    } catch (err) {
+      console.error("loadCompanies error:", err);
+      setCompanies([]);
+      setActiveCompany(null);
+    }
   };
 
   useEffect(() => {
+    // Initial session check
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data?.session?.user || null);
-      if (data?.session?.user) loadCompanies();
+      const currentUser = data?.session?.user || null;
+      setUser(currentUser);
+      if (currentUser) loadCompanies();
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      if (session?.user) loadCompanies();
-      else { setCompanies([]); setCompany(null); }
+    // Auth state listener
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        loadCompanies();
+      } else {
+        setCompanies([]);
+        setActiveCompany(null);
+        localStorage.removeItem("active_company_id");
+      }
     });
+
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  const switchCompany = (c) => {
-    setCompany(c);
-    localStorage.setItem("active_company_id", c.id);
+  const switchCompany = (company) => {
+    setActiveCompany(company);
+    localStorage.setItem("active_company_id", company.id);
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null); setCompany(null); setCompanies([]);
+    setUser(null);
+    setActiveCompany(null);
+    setCompanies([]);
+    localStorage.removeItem("active_company_id");
   };
 
   return (
-    <AuthContext.Provider value={{ user, company, companies, loading, loadCompanies, switchCompany, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        activeCompany,
+        companies,
+        loading,
+        loadCompanies,
+        switchCompany,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
