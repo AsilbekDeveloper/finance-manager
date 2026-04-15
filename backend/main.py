@@ -461,15 +461,36 @@ async def list_companies(user: dict = Depends(get_current_user)):
     """Alias for /api/companies/me — prevents 405 errors."""
     r = supabase.table("company_members")        .select("company_id, role, companies(id, name, created_at)")        .eq("user_id", user["id"]).execute()
     return {"data": r.data}
-
+###
 @app.post("/api/companies")
 async def create_company(body: CompanyCreate, user: dict = Depends(get_current_user)):
-    r = supabase.table("companies").insert({
-        "name":     body.name,
-        "owner_id": user["id"]
-    }).execute()
-    return r.data[0]
+    try:
+        # 1. Kompaniyani yaratish (RLS uchun created_by qo'shildi)
+        comp_res = supabase.table("companies").insert({
+            "name": body.name,
+            "owner_id": user["id"],
+            "created_by": user["id"]
+        }).execute()
+        
+        if not comp_res.data:
+            raise HTTPException(status_code=500, detail="Kompaniya yaratishda xatolik yuz berdi")
+            
+        new_company = comp_res.data[0]
 
+        # 2. MUHIM: Yaratuvchini company_members jadvaliga 'owner' sifatida qo'shish
+        # Busiz /api/companies/me endpointi bo'sh qaytadi
+        supabase.table("company_members").insert({
+            "company_id": new_company["id"],
+            "user_id": user["id"],
+            "role": "owner",
+            "email": user["email"]
+        }).execute()
+
+        return new_company
+    except Exception as e:
+        print(f"[API ERROR] create_company: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+###
 @app.get("/api/companies/me")
 async def get_my_companies(user: dict = Depends(get_current_user)):
     r = supabase.table("company_members")\

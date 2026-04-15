@@ -15,26 +15,26 @@ export default function CreateCompany() {
     setErr(""); setLoading(true);
 
     try {
-      // 1. Ensure fresh session token exists
-      let { data: sd } = await supabase.auth.getSession();
-      if (!sd?.session) {
-        const { data: rd } = await supabase.auth.refreshSession();
-        sd = rd;
-      }
+      // 1. Yangi sessiyani tekshirish
+      const { data: sd } = await supabase.auth.getSession();
       if (!sd?.session) throw new Error("Sessiya topilmadi. Qaytadan kiring.");
 
-      // 2. Create company
+      // 2. Kompaniya yaratish
       const company = await api.createCompany(name.trim());
-      if (!company?.id) throw new Error("Kompaniya yaratilmadi — server javobi noto'g'ri");
+      
+      if (!company || !company.id) {
+        throw new Error("Kompaniya yaratilmadi. Server xatosi.");
+      }
 
-      // 3. Save active company id so AuthContext picks it up on reload
+      // 3. Aktiv kompaniyani belgilash
       localStorage.setItem("active_company_id", company.id);
 
-      // 4. Hard redirect — lets AuthContext reinitialize cleanly with the new company
+      // 4. Force reload o'rniga redirect va contextni yangilash ham mumkin
+      // Lekin window.location.href eng xavfsiz yo'l
       window.location.href = "/overview";
     } catch (e) {
-      console.error("[CreateCompany]", e);
-      setErr(e.message);
+      console.error("[CreateCompany Error]", e);
+      setErr(e.message || "Kutilmagan xato yuz berdi");
       setLoading(false);
     }
   };

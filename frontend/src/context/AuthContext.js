@@ -10,35 +10,27 @@ export function AuthProvider({ children }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const initialLoadDone = useRef(false);
-
-  const loadCompanies = useCallback(async () => {
+  const loadCompanies = useCallback(async (userId) => {
+    if (!userId) return [];
     try {
       console.log("[AuthContext] loadCompanies chaqirildi...");
       const r = await api.getMyCompanies();
-      
-      console.log("[AuthContext] Backenddan kelgan data:", r);
-
-      // Backend formatiga moslashuvchan mapping (r.data yoki r o'zi)
       const rawData = r.data || r || [];
+      
       const list = Array.isArray(rawData) ? rawData.map((m) => {
-        // Agar join formatida bo'lsa (m.companies), aks holda obyektning o'zi
         if (m.companies) return { ...m.companies, role: m.role };
         return m.id ? m : null;
       }).filter(Boolean) : [];
 
-      console.log("[AuthContext] Saralangan kompaniyalar ro'yxati:", list);
       setCompanies(list);
 
       const saved = localStorage.getItem("active_company_id");
       const found = list.find((c) => c.id === saved) || list[0] || null;
       
-      setCompany(found);
       if (found) {
+        setCompany(found);
         localStorage.setItem("active_company_id", found.id);
-        console.log("[AuthContext] Aktiv kompaniya o'rnatildi:", found.name);
       }
-
       return list;
     } catch (err) {
       console.error("[AuthContext] loadCompanies failed:", err.message);
@@ -47,33 +39,25 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // 1. Mount bo'lganda sessiyani tekshirish
-    supabase.auth.getSession().then(async ({ data }) => {
+    // Sessiyani bir marta tekshirish
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
       const u = data?.session?.user || null;
-      console.log("[AuthContext] Dastlabki sessiya:", u ? u.email : "Yo'q");
       setUser(u);
-      
-      if (u) {
-        await loadCompanies();
-      }
-      
-      initialLoadDone.current = true;
+      if (u) await loadCompanies(u.id);
       setLoading(false);
-    });
+    };
 
-    // 2. Auth o'zgarishlarini kuzatish
+    initAuth();
+
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("[AuthContext] Auth hodisasi:", event);
-      
-      if (!initialLoadDone.current) return;
-
       const u = session?.user || null;
       setUser(u);
-      
-      if (u) {
-        await loadCompanies();
-      } else {
-        console.log("[AuthContext] Logout holati, ma'lumotlar tozalanmoqda");
+
+      if (u && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+        await loadCompanies(u.id);
+      } else if (event === "SIGNED_OUT") {
         setCompanies([]);
         setCompany(null);
         localStorage.removeItem("active_company_id");
@@ -82,6 +66,8 @@ export function AuthProvider({ children }) {
 
     return () => listener.subscription.unsubscribe();
   }, [loadCompanies]);
+
+  // ... switchCompany va signOut o'zgarishsiz qoladi
 
   const switchCompany = useCallback((c) => {
     console.log("[AuthContext] Kompaniya almashtirildi:", c.name);
