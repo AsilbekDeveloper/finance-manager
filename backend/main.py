@@ -225,7 +225,16 @@ async def handle_query(chat_id: int, query_type: str, company_id: str):
 # ── Telegram webhook ──────────────────────────────────────────────────────────
 @app.post("/webhook")
 async def webhook(req: Request):
-    data = await req.json()
+    if req.method != "POST":
+        return {"ok": True}
+
+    try:
+        data = await req.json()
+    except Exception:
+        return {"ok": True}
+    
+    if not data:
+        return {"ok": True}
 
     if "callback_query" in data:
         await handle_callback(data["callback_query"])
