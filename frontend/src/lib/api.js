@@ -1,61 +1,105 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const supabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL,
-  process.env.REACT_APP_SUPABASE_ANON_KEY
-);
+// 1. Supabase Client sozlamasi (PersistSession bilan)
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+// Debug log: Env o'zgaruvchilari yuklanganini tekshirish
+console.log("[DEBUG] Supabase URL yuklandi:", !!supabaseUrl);
+console.log("[DEBUG] Supabase Key yuklandi:", !!supabaseAnonKey);
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
 const BASE = process.env.REACT_APP_API_URL || "";
+console.log("[DEBUG] Backend URL (BASE):", BASE);
 
+// 2. Tokenni olish funksiyasi (Loglar bilan)
 async function getToken() {
-  // First try current session
-  let { data } = await supabase.auth.getSession();
+  console.log("[api] Token so'ralmoqda...");
   
-  // If no token, try refreshing (handles post-register case)
+  let { data, error: sessionError } = await supabase.auth.getSession();
+  
+  if (sessionError) {
+    console.error("[api] Session olishda xato:", sessionError.message);
+  }
+
+  // Agar session yo'q bo'lsa, yangilab ko'rish
   if (!data?.session?.access_token) {
-    const refreshed = await supabase.auth.refreshSession();
-    data = refreshed.data;
+    console.warn("[api] Session topilmadi, refresh qilib ko'rilmoqda...");
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    
+    if (refreshError) {
+      console.error("[api] Refresh qilishda xato:", refreshError.message);
+      return "";
+    }
+    data = refreshedData;
+  }
+
+  const token = data?.session?.access_token || "";
+  
+  if (!token) {
+    console.warn("[api] DIQQAT: Auth token topilmadi! Foydalanuvchi login qilmagan bo'lishi mumkin.");
+  } else {
+    console.log("[api] Token muvaffaqiyatli olindi.");
   }
   
-  const token = data?.session?.access_token || "";
-  if (!token) {
-    console.warn("[api] No auth token available");
-  }
   return token;
 }
 
+// 3. Umumiy so'rov yuborish funksiyasi
 async function req(path, options = {}) {
   const token = await getToken();
   
   if (!token) {
+    console.error("[api] Request to'xtatildi: Token yo'q.");
     throw new Error("Tizimga kiring (token topilmadi)");
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    ...options,
-  });
-  
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err.detail || `API error ${res.status}`;
-    console.error(`[api] ${options.method || "GET"} ${path} → ${res.status}:`, msg);
-    throw new Error(msg);
+  const url = `${BASE}${path}`;
+  console.log(`[api] REQ: ${options.method || "GET"} ${url}`);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      ...options,
+    });
+
+    console.log(`[api] RES Status: ${res.status}`);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err.detail || `API error ${res.status}`;
+      console.error(`[api] ERROR ${res.status}:`, msg);
+      throw new Error(msg);
+    }
+
+    const responseData = await res.json();
+    console.log(`[api] SUCCESS: ${path}`, responseData);
+    return responseData;
+  } catch (error) {
+    console.error(`[api] NETWORK ERROR: ${path}`, error.message);
+    throw error;
   }
-  return res.json();
 }
 
-// Append company_id to query string
+// 4. Helper: Company ID ni URLga qo'shish
 function withCompany(path, companyId, extra = {}) {
   const params = new URLSearchParams({ company_id: companyId, ...extra });
   return `${path}?${params}`;
 }
 
+// 5. API API Export
 export const api = {
-  // ── Companies ───────────────────────────────────────────────────────────
+  // Companies
   createCompany: (name) =>
     req("/api/companies", { method: "POST", body: JSON.stringify({ name }) }),
 
@@ -75,7 +119,7 @@ export const api = {
   generateTelegramLink: (companyId) =>
     req(`/api/companies/${companyId}/telegram-link`, { method: "POST" }),
 
-  // ── Transactions ────────────────────────────────────────────────────────
+  // Transactions
   getTransactions: (companyId, params = {}) =>
     req(withCompany("/api/transactions", companyId, params)),
 
@@ -88,7 +132,7 @@ export const api = {
   deleteTransaction: (id) =>
     req(`/api/transactions/${id}`, { method: "DELETE" }),
 
-  // ── Categories ──────────────────────────────────────────────────────────
+  // Categories
   getCategories: (companyId, type) =>
     req(withCompany("/api/categories", companyId, type ? { type } : {})),
 
@@ -98,14 +142,14 @@ export const api = {
   deleteCategory: (id) =>
     req(`/api/categories/${id}`, { method: "DELETE" }),
 
-  // ── Stats ────────────────────────────────────────────────────────────────
+  // Stats
   getOverview: (companyId, period = "month") =>
     req(withCompany("/api/stats/overview", companyId, { period })),
 
   getAnalytics: (companyId, year) =>
     req(withCompany("/api/stats/analytics", companyId, year ? { year } : {})),
 
-  // ── Budgets ──────────────────────────────────────────────────────────────
+  // Budgets
   getBudgets: (companyId) => req(withCompany("/api/budgets", companyId)),
 
   createBudget: (data) =>
@@ -114,18 +158,19 @@ export const api = {
   deleteBudget: (id) => req(`/api/budgets/${id}`, { method: "DELETE" }),
 };
 
-// ── Formatting helpers ──────────────────────────────────────────────────────
+// 6. Formatting Helpers
 export function formatCurrency(amount) {
   if (amount === null || amount === undefined) return "0 so'm";
   const num = parseFloat(amount);
-  // Format with spaces as thousand separators: 1 500 000 so'm
   return num.toLocaleString("ru-RU", { maximumFractionDigits: 0 }) + " so'm";
 }
 
 export function formatDate(dateStr) {
   if (!dateStr) return "";
   return new Date(dateStr).toLocaleDateString("uz-UZ", {
-    day: "2-digit", month: "short", year: "numeric",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
 }
 
