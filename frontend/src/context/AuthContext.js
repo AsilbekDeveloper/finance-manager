@@ -10,12 +10,12 @@ export function AuthProvider({ children }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Bir marta yuklashni nazorat qilish uchun flaglar
+  // Bir marta yuklashni va takroriy so'rovlarni nazorat qilish
   const initialLoadDone = useRef(false);
   const isFetching = useRef(false);
 
   const loadCompanies = useCallback(async () => {
-    // Agar hozir yuklanayotgan bo'lsa, qayta so'rov yubormaymiz
+    // Agar hozir yuklash jarayoni ketayotgan bo'lsa, ikkinchi so'rovni bloklaymiz
     if (isFetching.current) return;
     isFetching.current = true;
 
@@ -23,22 +23,23 @@ export function AuthProvider({ children }) {
       console.log("[AuthContext] loadCompanies chaqirildi...");
       const r = await api.getMyCompanies();
       
+      // LOG: Backenddan kelgan haqiqiy strukturani ko'ramiz
       console.log("[AuthContext] Backenddan kelgan xom data:", r);
 
-      // --- LOGIKANI TOG'IRLASH: Data qayerda ekanligini aniqlash ---
+      // --- BACKEND FORMATINI TO'G'RI PARSE QILISH ---
       let rawData = [];
       if (Array.isArray(r)) {
         rawData = r;
       } else if (r && Array.isArray(r.data)) {
         rawData = r.data;
-      } else if (r && typeof r === 'object') {
-        // Agar bitta obyekt bo'lib kelsa (masalan r.name bor bo'lsa)
-        rawData = r.id ? [r] : [];
+      } else if (r && typeof r === 'object' && r.id) {
+        // Agar bitta obyekt bo'lib kelsa
+        rawData = [r];
       }
 
       const list = rawData.map((m) => {
         if (!m) return null;
-        // Agar backend "join" qilib yuborsa: { role: 'admin', companies: { id: 1, name: '...' } }
+        // Agar backend "join" qilib yuborsa: { role: 'admin', companies: { id: '...', name: '...' } }
         if (m.companies) {
           return { ...m.companies, role: m.role };
         }
@@ -49,21 +50,22 @@ export function AuthProvider({ children }) {
       console.log("[AuthContext] Yakuniy saralangan ro'yxat:", list);
       setCompanies(list);
 
-      // Faol kompaniyani aniqlash
+      // Faol kompaniyani tanlash logikasi
       const saved = localStorage.getItem("active_company_id");
       const found = list.find((c) => c.id === saved) || list[0] || null;
       
-      setCompany(found);
       if (found) {
+        setCompany(found);
         localStorage.setItem("active_company_id", found.id);
-        console.log("[AuthContext] Aktiv kompaniya:", found.name);
+        console.log("[AuthContext] Aktiv kompaniya o'rnatildi:", found.name);
       } else {
+        setCompany(null);
         console.warn("[AuthContext] Hech qanday kompaniya topilmadi.");
       }
 
       return list;
     } catch (err) {
-      console.error("[AuthContext] loadCompanies failed:", err.message);
+      console.error("[AuthContext] loadCompanies xatosi:", err.message);
       return [];
     } finally {
       isFetching.current = false;
@@ -73,36 +75,36 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    // 1. Birinchi marta kirganda sessiyani tekshirish
-    const checkInitialSession = async () => {
+    // 1. Dastur ishga tushganda sessiyani tekshirish
+    const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!mounted) return;
 
         const u = session?.user || null;
-        console.log("[AuthContext] Dastlabki sessiya:", u ? u.email : "Yo'q");
+        console.log("[AuthContext] Sessiya holati:", u ? u.email : "Tizimga kirilmagan");
         setUser(u);
         
         if (u) {
           await loadCompanies();
         }
       } catch (e) {
-        console.error("[AuthContext] Session error:", e);
+        console.error("[AuthContext] Init error:", e);
       } finally {
         if (mounted) {
-          initialLoadDone.current = true;
           setLoading(false);
+          initialLoadDone.current = true;
         }
       }
     };
 
-    checkInitialSession();
+    initAuth();
 
-    // 2. Auth o'zgarishlarini kuzatish (Login/Logout)
+    // 2. Auth o'zgarishlarini kuzatish (Login/Logout/Token Refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("[AuthContext] Auth hodisasi:", event);
       
-      // Faqat kerakli hodisalarda reactsiyaga kirishamiz
+      // Faqat kerakli eventlarda reactsiyaga kirishamiz (cheksiz loopni oldini olish)
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         const u = session?.user || null;
         setUser(u);
@@ -110,7 +112,6 @@ export function AuthProvider({ children }) {
       } 
       
       if (event === 'SIGNED_OUT') {
-        console.log("[AuthContext] Logout holati");
         setUser(null);
         setCompanies([]);
         setCompany(null);
@@ -132,13 +133,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    try {
-      console.log("[AuthContext] SignOut bajarilmoqda...");
-      await supabase.auth.signOut();
-      // onAuthStateChange SIGNED_OUT ni tutib oladi va ma'lumotlarni tozalaydi
-    } catch (e) {
-      console.error("Signout error:", e);
-    }
+    console.log("[AuthContext] Chiqish bajarilmoqda...");
+    await supabase.auth.signOut();
   }, []);
 
   return (
