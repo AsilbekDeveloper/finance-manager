@@ -35,14 +35,12 @@ app = FastAPI(title="FinanceBot API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://finance-manager-gamma-gray.vercel.app",
-        "http://localhost:3000",
-        "https://*.vercel.app",
+        "https://finance-manager-gamma-gray.vercel.app", # Sizning vercel manzilingiz
+        "http://localhost:3000"                         # Local test uchun
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=True, 
+    allow_methods=["*"], 
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
