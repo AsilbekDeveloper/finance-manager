@@ -34,13 +34,10 @@ app = FastAPI(title="FinanceBot API", lifespan=lifespan)
 # 🔥 To'g'rilangan CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://finance-manager-gamma-gray.vercel.app", # Sizning vercel manzilingiz
-        "http://localhost:3000"                         # Local test uchun
-    ],
-    allow_credentials=True, 
-    allow_methods=["*"], 
+    allow_origins=["https://finance-manager-gamma-gray.vercel.app", "http://localhost:3000"],
+    allow_credentials=True,
     allow_headers=["*"],
+    allow_methods=["*"],
 )
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
@@ -531,6 +528,10 @@ async def generate_telegram_link(company_id: str, user: dict = Depends(get_curre
 # Add telegram_link_code column if missing (run once)
 # ALTER TABLE company_members ADD COLUMN IF NOT EXISTS telegram_link_code TEXT;
 
+from datetime import date, datetime
+from typing import Optional
+from fastapi import HTTPException, Depends
+
 # ── Transactions ──────────────────────────────────────────────────────────────
 
 @app.get("/api/transactions")
@@ -543,53 +544,94 @@ async def get_transactions(
     limit: int = 200, offset: int = 0,
     user: dict = Depends(get_current_user)
 ):
+    # Dastlab so'rovni yaratamiz
     q = supabase.table("transactions").select("*").eq("company_id", company_id)
+    
+    # Filtrlarni qo'shamiz
     if start_date:   q = q.gte("date", start_date)
     if end_date:     q = q.lte("date", end_date)
     if type:         q = q.eq("type", type)
     if category_id:  q = q.eq("category_id", category_id)
+    
+    # Tartiblash va limit
     q = q.order("date", desc=True).order("created_at", desc=True).range(offset, offset+limit-1)
-    r = q.execute()
-    return {"data": r.data}
+    
+    try:
+        r = q.execute()
+        return {"data": r.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tranzaksiyalarni olishda xato: {str(e)}")
 
 @app.post("/api/transactions")
 async def create_transaction(tx: TransactionCreate, user: dict = Depends(get_current_user)):
     data = tx.dict()
-    data["date"]       = data["date"] or date.today().isoformat()
+    
+    # 1. Sana bo'lmasa, bugungi sanani qo'shish
+    data["date"] = data.get("date") or date.today().isoformat()
+    
+    # 2. DIQQAT: Agar bazada 'user_id' bo'lsa, quyidagi qatorni ishlating
+    # Agar siz SQL editor'da 'created_by' qo'shgan bo'lsangiz, bu qolishi mumkin.
+    # Eng xavfsiz yo'li - ikkala ustunga ham user id ni yozish:
     data["created_by"] = user["id"]
-    r = supabase.table("transactions").insert(data).execute()
-    return r.data[0]
+    
+    try:
+        r = supabase.table("transactions").insert(data).execute()
+        if not r.data:
+            raise HTTPException(status_code=400, detail="Tranzaksiya yaratilmadi (Baza bo'sh qaytdi)")
+        return r.data[0]
+    except Exception as e:
+        # Xatoni aniq ko'rish uchun Railway loglariga chiqaradi
+        print(f"DEBUG ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/transactions/{tx_id}")
 async def update_transaction(tx_id: str, tx: TransactionUpdate, user: dict = Depends(get_current_user)):
     data = {k: v for k, v in tx.dict().items() if v is not None}
     data["updated_at"] = datetime.now().isoformat()
-    r = supabase.table("transactions").update(data).eq("id", tx_id).execute()
-    return r.data[0]
+    
+    try:
+        # Faqat o'ziga tegishli tranzaksiyani o'zgartira olishi uchun filter (ixtiyoriy)
+        r = supabase.table("transactions").update(data).eq("id", tx_id).execute()
+        return r.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/transactions/{tx_id}")
 async def delete_transaction(tx_id: str, user: dict = Depends(get_current_user)):
-    supabase.table("transactions").delete().eq("id", tx_id).execute()
-    return {"success": True}
+    try:
+        supabase.table("transactions").delete().eq("id", tx_id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ── Categories ────────────────────────────────────────────────────────────────
 
 @app.get("/api/categories")
 async def get_categories(company_id: str, type: Optional[str] = None, user: dict = Depends(get_current_user)):
-    q = supabase.table("categories").select("*").eq("company_id", company_id).order("is_default", desc=True).order("name")
-    if type: q = q.eq("type", type)
-    return {"data": q.execute().data}
+    try:
+        q = supabase.table("categories").select("*").eq("company_id", company_id).order("is_default", desc=True).order("name")
+        if type: 
+            q = q.eq("type", type)
+        r = q.execute()
+        return {"data": r.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/categories")
 async def create_category(cat: CategoryCreate, user: dict = Depends(get_current_user)):
-    r = supabase.table("categories").insert(cat.dict()).execute()
-    return r.data[0]
+    try:
+        r = supabase.table("categories").insert(cat.dict()).execute()
+        return r.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/categories/{cat_id}")
 async def delete_category(cat_id: str, user: dict = Depends(get_current_user)):
-    supabase.table("categories").delete().eq("id", cat_id).execute()
-    return {"success": True}
-
+    try:
+        supabase.table("categories").delete().eq("id", cat_id).execute()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/stats/overview")
