@@ -30,7 +30,20 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="FinanceBot API", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# 🔥 To'g'rilangan CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://finance-manager-gamma-gray.vercel.app",
+        "http://localhost:3000",
+        "https://*.vercel.app",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
 async def get_current_user(request: Request) -> dict:
@@ -45,21 +58,10 @@ async def get_current_user(request: Request) -> dict:
         if not user_resp or not user_resp.user:
             raise HTTPException(status_code=401, detail="Invalid token")
         return {"id": user_resp.user.id, "email": user_resp.user.email, "token": token}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Auth failed: {str(e)[:80]}")
 
-async def get_company_id(request: Request, user: dict = Depends(get_current_user)) -> str:
-    """Get company_id from query param or user's first company."""
-    company_id = request.query_params.get("company_id")
-    if company_id:
-        return company_id
-    # fallback: first company of user
-    r = supabase.table("company_members").select("company_id").eq("user_id", user["id"]).limit(1).execute()
-    if not r.data:
-        raise HTTPException(404, "No company found for user")
-    return r.data[0]["company_id"]
+# Qolgan barcha kodlaringiz shu yerda qoladi...
 
 # ── Pydantic Models ───────────────────────────────────────────────────────────
 class CompanyCreate(BaseModel):
