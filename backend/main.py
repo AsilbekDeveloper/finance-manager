@@ -223,140 +223,168 @@ async def handle_query(chat_id: int, query_type: str, company_id: str):
 📝 Jami {len(rows)} ta tranzaksiya""")
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────
+from fastapi import Request
+import traceback
+
 @app.post("/webhook")
 async def webhook(req: Request):
-    if req.method != "POST":
-        return {"ok": True}
 
+    # ── 1. JSON SAFETY ─────────────────────────────
     try:
         data = await req.json()
-    except Exception:
+    except Exception as e:
+        print("JSON ERROR:", e)
         return {"ok": True}
-    
+
     if not data:
         return {"ok": True}
 
-    if "callback_query" in data:
-        await handle_callback(data["callback_query"])
-        return {"ok": True}
+    try:
+        # ── 2. CALLBACK QUERY ───────────────────────
+        if "callback_query" in data:
+            await handle_callback(data["callback_query"])
+            return {"ok": True}
 
-    msg = data.get("message", {})
-    if not msg:
-        return {"ok": True}
+        # ── 3. MESSAGE EXTRACT ──────────────────────
+        msg = data.get("message")
+        if not msg:
+            return {"ok": True}
 
-    chat_id   = msg["chat"]["id"]
-    tg_uid    = str(msg["from"]["id"])
-    user_name = msg["from"].get("first_name", "Do'stim")
-    text      = msg.get("text", "").strip()
+        chat_id = msg["chat"]["id"]
+        tg_uid = str(msg["from"]["id"])
+        user_name = msg["from"].get("first_name", "Do'stim")
+        text = (msg.get("text") or "").strip()
 
-    # ── /start ─────────────────────────────────────────────────────────────
-    if text == "/start":
-        session = get_session(tg_uid)
-        if session:
-            co = supabase.table("companies").select("name").eq("id", session["company_id"]).execute()
-            co_name = co.data[0]["name"] if co.data else "Kompaniya"
-            await tg_send(chat_id, f"""👋 Salom, <b>{user_name}</b>!
+        # ── 4. /START ───────────────────────────────
+        if text == "/start":
+            session = get_session(tg_uid)
+
+            if session:
+                co = supabase.table("companies") \
+                    .select("name") \
+                    .eq("id", session["company_id"]) \
+                    .execute()
+
+                co_name = co.data[0]["name"] if co.data else "Kompaniya"
+
+                await tg_send(chat_id, f"""👋 Salom, <b>{user_name}</b>!
 
 ✅ Siz <b>{co_name}</b> kompaniyasiga bog'langansiz.
 
-Nima qila olasiz:
 💰 "500 000 so'm sotuvdan tushdi"
-💸 "Xodimga 2 000 000 ish haqi berdik"
+💸 "2 000 000 ish haqi berdik"
 📊 "Bu oy qancha sarfladik?"
 
 /today  /week  /month  /help""")
-        else:
-            await tg_send(chat_id, f"""👋 Salom, <b>{user_name}</b>!
 
-🔗 Bot ishlatish uchun avval <b>dashboard</b>dan Telegram akkauntingizni bog'lang.
+            else:
+                await tg_send(chat_id, f"""👋 Salom, <b>{user_name}</b>!
 
-1️⃣ Dashboard ga kiring
-2️⃣ <b>Sozlamalar</b> → <b>Telegram bog'lash</b>
-3️⃣ Sizga <b>maxsus kod</b> beriladi
-4️⃣ Kodni shu yerga yuboring: /link SIZNING_KOD
+🔗 Avval dashboard orqali botni bog'lang.
 
-<i>Dashboard: {os.getenv('FRONTEND_URL', 'https://your-app.vercel.app')}</i>""")
-        return {"ok": True}
+1️⃣ Dashboard kiring
+2️⃣ Telegram linking
+3️⃣ Kodni /link CODE qilib yuboring""")
 
-    # ── /link CODE ─────────────────────────────────────────────────────────
-    if text.startswith("/link "):
-        code = text.split(" ", 1)[1].strip()
-        r = supabase.table("company_members").select("*").eq("telegram_link_code", code).execute()
-        if not r.data:
-            await tg_send(chat_id, "❌ Kod noto'g'ri yoki muddati o'tgan. Dashboard dan yangi kod oling.")
             return {"ok": True}
-        member = r.data[0]
-        # Save session
-        supabase.table("telegram_sessions").upsert({
-            "telegram_user_id": tg_uid,
-            "telegram_username": msg["from"].get("username"),
-            "company_id": member["company_id"]
-        }).execute()
-        # Mark member's telegram
-        supabase.table("company_members").update({
-            "telegram_user_id": tg_uid,
-            "telegram_link_code": None
-        }).eq("id", member["id"]).execute()
-        co = supabase.table("companies").select("name").eq("id", member["company_id"]).execute()
-        await tg_send(chat_id, f"✅ <b>{co.data[0]['name']}</b> kompaniyasiga muvaffaqiyatli bog'landingiz!\n\nEndi tranzaksiyalar yozishingiz mumkin.")
-        return {"ok": True}
 
-    # ── Check session ───────────────────────────────────────────────────────
-    company_id = get_or_prompt_session(chat_id, tg_uid)
-    if not company_id:
-        await tg_send(chat_id, "🔗 Avval dashboard dan Telegram akkauntingizni bog'lang.\n/start ni bosing.")
-        return {"ok": True}
+        # ── 5. /LINK ────────────────────────────────
+        if text.startswith("/link "):
+            code = text.split(" ", 1)[1].strip()
 
-    # ── Commands ────────────────────────────────────────────────────────────
-    if text == "/help":
-        await tg_send(chat_id, """📚 <b>Buyruqlar:</b>
-/today  — bugungi hisobot
-/week   — haftalik hisobot
-/month  — oylik hisobot
-/categories — kategoriyalar
+            r = supabase.table("company_members") \
+                .select("*") \
+                .eq("telegram_link_code", code) \
+                .execute()
 
-<b>Misol xabarlar:</b>
-• "1 500 000 so'm xizmat ko'rsatishdan tushdi"
-• "Transport uchun 200 000 to'ladik"
-• "Bu hafta qancha sarfladik?"
+            if not r.data:
+                await tg_send(chat_id, "❌ Kod noto‘g‘ri yoki eskirgan.")
+                return {"ok": True}
 
-🎤 Ovoz xabar ham ishlaydi!""")
-        return {"ok": True}
+            member = r.data[0]
 
-    if text == "/today":
-        await handle_query(chat_id, "today", company_id); return {"ok": True}
-    if text == "/week":
-        await handle_query(chat_id, "week", company_id); return {"ok": True}
-    if text == "/month":
-        await handle_query(chat_id, "month", company_id); return {"ok": True}
+            supabase.table("telegram_sessions").upsert({
+                "telegram_user_id": tg_uid,
+                "telegram_username": msg["from"].get("username"),
+                "company_id": member["company_id"]
+            }).execute()
 
-    if text == "/categories":
-        cats = supabase.table("categories").select("*").eq("company_id", company_id).order("type").execute()
-        inc  = [c for c in cats.data if c["type"] == "income"]
-        exp  = [c for c in cats.data if c["type"] == "expense"]
-        msg_text  = "📂 <b>Kategoriyalar:</b>\n\n💚 <b>Daromad:</b>\n"
-        msg_text += "\n".join([f"  {c['icon']} {c['name']}" for c in inc])
-        msg_text += "\n\n🔴 <b>Xarajat:</b>\n"
-        msg_text += "\n".join([f"  {c['icon']} {c['name']}" for c in exp])
-        await tg_send(chat_id, msg_text); return {"ok": True}
+            supabase.table("company_members").update({
+                "telegram_user_id": tg_uid,
+                "telegram_link_code": None
+            }).eq("id", member["id"]).execute()
 
-    # ── Voice ───────────────────────────────────────────────────────────────
-    if "voice" in msg:
-        await tg_send(chat_id, "🎤 Ovoz qabul qilindi, tahlil qilinmoqda...")
-        try:
+            co = supabase.table("companies") \
+                .select("name") \
+                .eq("id", member["company_id"]) \
+                .execute()
+
+            await tg_send(chat_id, f"✅ <b>{co.data[0]['name']}</b> ga ulandingiz!")
+            return {"ok": True}
+
+        # ── 6. SESSION CHECK ───────────────────────
+        company_id = get_or_prompt_session(chat_id, tg_uid)
+
+        if not company_id:
+            await tg_send(chat_id, "🔗 Avval botni dashboarddan bog'lang.")
+            return {"ok": True}
+
+        # ── 7. COMMANDS ────────────────────────────
+        if text == "/help":
+            await tg_send(chat_id, "📚 /today /week /month /categories")
+            return {"ok": True}
+
+        if text == "/today":
+            await handle_query(chat_id, "today", company_id)
+            return {"ok": True}
+
+        if text == "/week":
+            await handle_query(chat_id, "week", company_id)
+            return {"ok": True}
+
+        if text == "/month":
+            await handle_query(chat_id, "month", company_id)
+            return {"ok": True}
+
+        if text == "/categories":
+            cats = supabase.table("categories") \
+                .select("*") \
+                .eq("company_id", company_id) \
+                .execute()
+
+            inc = [c for c in cats.data if c["type"] == "income"]
+            exp = [c for c in cats.data if c["type"] == "expense"]
+
+            msg_text = "📂 Kategoriyalar:\n\n💚 Daromad:\n"
+            msg_text += "\n".join([f"{c['icon']} {c['name']}" for c in inc])
+            msg_text += "\n\n🔴 Xarajat:\n"
+            msg_text += "\n".join([f"{c['icon']} {c['name']}" for c in exp])
+
+            await tg_send(chat_id, msg_text)
+            return {"ok": True}
+
+        # ── 8. VOICE ───────────────────────────────
+        if "voice" in msg:
+            await tg_send(chat_id, "🎤 Ovoz tahlil qilinmoqda...")
+
             audio = await tg_download_voice(msg["voice"]["file_id"])
-            text  = await tg_transcribe(audio)
-            await tg_send(chat_id, f"📝 <i>{text}</i>")
+            text = await tg_transcribe(audio)
+
+            await tg_send(chat_id, f"📝 {text}")
             await process_intent(chat_id, text, company_id, msg.get("message_id"))
-        except Exception as e:
-            await tg_send(chat_id, f"❌ Xato: {str(e)[:120]}")
+
+            return {"ok": True}
+
+        # ── 9. TEXT PROCESS ────────────────────────
+        if text:
+            await process_intent(chat_id, text, company_id, msg.get("message_id"))
+
         return {"ok": True}
 
-    # ── Text ────────────────────────────────────────────────────────────────
-    if text:
-        await process_intent(chat_id, text, company_id, msg.get("message_id"))
-    return {"ok": True}
-
+    except Exception as e:
+        print("WEBHOOK CRASH:", e)
+        print(traceback.format_exc())
+        return {"ok": True}
 
 async def process_intent(chat_id: int, text: str, company_id: str, message_id=None):
     try:
