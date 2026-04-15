@@ -604,33 +604,55 @@ async def delete_transaction(tx_id: str, user: dict = Depends(get_current_user))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ── Categories ────────────────────────────────────────────────────────────────
+# ── Auth / Company ────────────────────────────────────────────────────────────
 
-@app.get("/api/categories")
-async def get_categories(company_id: str, type: Optional[str] = None, user: dict = Depends(get_current_user)):
-    try:
-        q = supabase.table("categories").select("*").eq("company_id", company_id).order("is_default", desc=True).order("name")
-        if type: 
-            q = q.eq("type", type)
-        r = q.execute()
-        return {"data": r.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# main.py ichida create_company funksiyasini mana shunday qoldiring:
+@app.post("/api/companies")
+async def create_company(body: CompanyCreate, user: dict = Depends(get_current_user)):
+    res = supabase.table("companies").insert({
+        "name": body.name,
+        "owner_id": user["id"],  # Endi bu uuid bo'lib tushadi
+        "created_by": user["id"]
+    }).execute()
+    
+    new_comp = res.data[0]
+    
+    # Member sifatida o'zini qo'shish
+    supabase.table("company_members").insert({
+        "company_id": new_comp["id"],
+        "user_id": user["id"],   # Endi bu uuid bo'lib tushadi
+        "role": "owner"
+    }).execute()
+    
+    return new_comp
+
+# ── Categories ────────────────────────────────────────────────────────────────
 
 @app.post("/api/categories")
 async def create_category(cat: CategoryCreate, user: dict = Depends(get_current_user)):
     try:
-        r = supabase.table("categories").insert(cat.dict()).execute()
+        data = cat.dict()
+        data["created_by"] = user["id"]  # RLS uchun foydalanuvchini biriktiramiz
+        
+        r = supabase.table("categories").insert(data).execute()
         return r.data[0]
     except Exception as e:
+        print(f"Error creating category: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/categories/{cat_id}")
-async def delete_category(cat_id: str, user: dict = Depends(get_current_user)):
+# ── Transactions (Eski kodda created_by yetishmayotgan edi) ───────────────────
+
+@app.post("/api/transactions")
+async def create_transaction(tx: TransactionCreate, user: dict = Depends(get_current_user)):
     try:
-        supabase.table("categories").delete().eq("id", cat_id).execute()
-        return {"success": True}
+        data = tx.dict()
+        data["created_by"] = user["id"]  # RLS uchun foydalanuvchini biriktiramiz
+        data["date"] = data.get("date") or date.today().isoformat()
+        
+        r = supabase.table("transactions").insert(data).execute()
+        return r.data[0]
     except Exception as e:
+        print(f"Error creating transaction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
