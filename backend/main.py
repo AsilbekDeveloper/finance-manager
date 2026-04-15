@@ -665,6 +665,26 @@ async def create_category(cat: CategoryCreate, user: dict = Depends(get_current_
         print(f"Error creating category: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/categories")
+async def get_categories(
+    company_id: str,
+    type: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    try:
+        query = supabase.table("categories") \
+            .select("*") \
+            .eq("company_id", company_id)
+
+        if type:
+            query = query.eq("type", type)
+
+        r = query.execute()
+        return {"data": r.data}
+    except Exception as e:
+        print(f"Error fetching categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ── Transactions (Eski kodda created_by yetishmayotgan edi) ───────────────────
 
 @app.post("/api/transactions")
