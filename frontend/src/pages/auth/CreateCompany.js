@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { supabase, api } from "../../lib/api";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { Building2, TrendingUp } from "lucide-react";
 
@@ -8,8 +7,7 @@ export default function CreateCompany() {
   const [name, setName]       = useState("");
   const [err, setErr]         = useState("");
   const [loading, setLoading] = useState(false);
-  const { loadCompanies }     = useAuth();
-  const nav = useNavigate();
+  useAuth(); // keep context alive but we don't need loadCompanies anymore
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -17,32 +15,26 @@ export default function CreateCompany() {
     setErr(""); setLoading(true);
 
     try {
-      // 1. Make sure we have a fresh token (post-register sessions can lag)
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session) {
-        // Try refreshing once
-        const { error: refreshErr } = await supabase.auth.refreshSession();
-        if (refreshErr) throw new Error("Sessiya topilmadi. Qaytadan kiring.");
+      // 1. Ensure fresh session token exists
+      let { data: sd } = await supabase.auth.getSession();
+      if (!sd?.session) {
+        const { data: rd } = await supabase.auth.refreshSession();
+        sd = rd;
       }
+      if (!sd?.session) throw new Error("Sessiya topilmadi. Qaytadan kiring.");
 
-      // 2. Create the company
+      // 2. Create company
       const company = await api.createCompany(name.trim());
-      if (!company?.id) throw new Error("Kompaniya yaratilmadi");
+      if (!company?.id) throw new Error("Kompaniya yaratilmadi — server javobi noto'g'ri");
 
-      // 3. Wait for loadCompanies to finish — it sets context state
-      const list = await loadCompanies();
-      if (!list || list.length === 0) {
-        // Fallback: hard reload to let AuthContext reinit cleanly
-        window.location.href = "/overview";
-        return;
-      }
+      // 3. Save active company id so AuthContext picks it up on reload
+      localStorage.setItem("active_company_id", company.id);
 
-      // 4. Navigate
-      nav("/overview", { replace: true });
+      // 4. Hard redirect — lets AuthContext reinitialize cleanly with the new company
+      window.location.href = "/overview";
     } catch (e) {
       console.error("[CreateCompany]", e);
       setErr(e.message);
-    } finally {
       setLoading(false);
     }
   };
