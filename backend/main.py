@@ -465,31 +465,35 @@ async def list_companies(user: dict = Depends(get_current_user)):
 @app.post("/api/companies")
 async def create_company(body: CompanyCreate, user: dict = Depends(get_current_user)):
     try:
-        # 1. Kompaniyani yaratish (RLS uchun created_by qo'shildi)
-        comp_res = supabase.table("companies").insert({
+        # 1. Kompaniya yaratish
+        c_res = supabase.table("companies").insert({
             "name": body.name,
             "owner_id": user["id"],
             "created_by": user["id"]
         }).execute()
         
-        if not comp_res.data:
-            raise HTTPException(status_code=500, detail="Kompaniya yaratishda xatolik yuz berdi")
-            
-        new_company = comp_res.data[0]
+        if not c_res.data:
+            raise HTTPException(500, "Company table insert failed")
+        
+        new_comp = c_res.data[0]
 
-        # 2. MUHIM: Yaratuvchini company_members jadvaliga 'owner' sifatida qo'shish
-        # Busiz /api/companies/me endpointi bo'sh qaytadi
-        supabase.table("company_members").insert({
-            "company_id": new_company["id"],
+        # 2. Foydalanuvchini a'zo sifatida qo'shish (Majburiy!)
+        m_res = supabase.table("company_members").insert({
+            "company_id": new_comp["id"],
             "user_id": user["id"],
             "role": "owner",
-            "email": user["email"]
+            "email": user.get("email")
         }).execute()
 
-        return new_company
+        if not m_res.data:
+            # Agar a'zo qo'shilmasa, kompaniyani ham o'chirib tashlash kerak (Cleanup)
+            supabase.table("companies").delete().eq("id", new_comp["id"]).execute()
+            raise HTTPException(500, "Member table insert failed")
+
+        return new_comp
     except Exception as e:
-        print(f"[API ERROR] create_company: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"CRITICAL ERROR: {str(e)}")
+        raise HTTPException(500, f"Server error: {str(e)}")
 ###
 @app.get("/api/companies/me")
 async def get_my_companies(user: dict = Depends(get_current_user)):
